@@ -1,0 +1,12 @@
+[project]
+name = "agent-bootcamp"
+version = "0.1.0"
+description = "Spiral training system that makes git-agents genuinely skilled"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+agent-bootcamp = "cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

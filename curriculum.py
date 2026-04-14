@@ -1,0 +1,380 @@
+"""Challenge generation and curriculum management.
+
+Defines the Challenge dataclass, topic pools, spiral difficulty,
+and adaptive curriculum logic.
+"""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field
+from enum import Enum, auto
+from typing import Optional
+
+from skills import SkillsTracker, SkillGap, Topic
+
+
+# ---------------------------------------------------------------------------
+# Challenge
+# ---------------------------------------------------------------------------
+
+class DifficultyLevel(Enum):
+    BEGINNER = 1
+    EASY = 2
+    MEDIUM = 3
+    MODERATE = 4
+    HARD = 5
+    EXPERT = 6
+    MASTER = 7
+    GRANDMASTER = 8
+    NIGHTMARE = 9
+    IMPOSSIBLE = 10
+
+
+@dataclass
+class Challenge:
+    """A single training challenge."""
+
+    id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    topic: Topic = Topic.TESTING
+    difficulty: int = 1
+    rotation: int = 1  # which pass through the spiral (1st, 2nd, …)
+    description: str = ""
+    acceptance_criteria: list[str] = field(default_factory=list)
+    time_limit_minutes: float = 10.0
+    hints: list[str] = field(default_factory=list)
+    is_blind: bool = False  # blind challenges hide acceptance criteria
+    metadata: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.difficulty = max(1, min(10, self.difficulty))
+
+    @property
+    def difficulty_label(self) -> str:
+        try:
+            return DifficultyLevel(self.difficulty).name
+        except ValueError:
+            return f"LEVEL_{self.difficulty}"
+
+
+# ---------------------------------------------------------------------------
+# Topic pool definitions
+# ---------------------------------------------------------------------------
+
+_TOPIC_DESCRIPTIONS: dict[Topic, dict[int, str]] = {
+    Topic.RECONNAISSANCE: {
+        1: "Map all Python files in the project and list their public functions.",
+        2: "Analyse the dependency graph of the project. Identify which modules import which.",
+        3: "Identify 3 areas of highest risk in the codebase (untested, complex, or old code).",
+        4: "Create a full project map: files, functions, call-graph, external dependencies.",
+        5: "Write a risk assessment report ranking every module by fragility score.",
+        6: "Build a visual dependency graph (text-based) and identify circular dependencies.",
+        7: "Analyse the project architecture: identify anti-patterns and suggest alternatives.",
+        8: "Produce a comprehensive onboarding guide for a new developer joining this project.",
+        9: "Identify dead code paths and unreachable modules across the entire codebase.",
+        10: "Perform a full security audit of the codebase, classifying each finding by severity.",
+    },
+    Topic.FIRST_WINS: {
+        1: "Fix a typo in a user-facing string or error message.",
+        2: "Add a missing docstring to an exported function.",
+        3: "Write a single passing test for an untested utility function.",
+        4: "Fix an inconsistent naming convention in a module.",
+        5: "Add type hints to an untyped function.",
+        6: "Replace a magic number with a named constant.",
+        7: "Fix a deprecated API usage and update the import.",
+        8: "Add logging to a critical path that currently has none.",
+        9: "Resolve all TODO/FIXME comments in a given module.",
+        10: "Standardise error handling across a module to use custom exceptions.",
+    },
+    Topic.TESTING: {
+        1: "Write a basic unit test for a given function covering the happy path.",
+        2: "Add tests for edge cases: empty input, None, boundary values.",
+        3: "Write a parametrised test suite covering at least 5 input combinations.",
+        4: "Add integration tests that verify two modules work together correctly.",
+        5: "Write property-based tests (hypothesis-style) for a pure function.",
+        6: "Add mutation-testing-resistant tests — tests that would fail if code logic changed.",
+        7: "Write a test suite for an async function, including timeout and error scenarios.",
+        8: "Build a test fixture factory that generates realistic test data for the module.",
+        9: "Write fuzz tests that stress-test input parsing with random byte sequences.",
+        10: "Achieve 95%+ branch coverage on a complex module with meaningful tests.",
+    },
+    Topic.DOCUMENTATION: {
+        1: "Write a docstring for a function explaining what it does and its return value.",
+        2: "Add parameter and return type documentation following a standard format.",
+        3: "Write a README section explaining how to set up the project.",
+        4: "Write API documentation for a module, covering all public functions.",
+        5: "Create a tutorial walkthrough with code examples for a feature.",
+        6: "Write an architecture decision record (ADR) for a design choice.",
+        7: "Generate a changelog entry from recent git commits.",
+        8: "Write inline comments explaining a complex algorithm step-by-step.",
+        9: "Create a contributor's guide with coding standards and PR process.",
+        10: "Write a design document proposing a new feature with diagrams (text-based).",
+    },
+    Topic.REFACTORING: {
+        1: "Simplify a function by removing obvious redundancy.",
+        2: "Extract a repeated code block into a helper function.",
+        3: "Replace a nested if/else chain with a lookup table or match statement.",
+        4: "Split a function longer than 30 lines into smaller, focused functions.",
+        5: "Replace a class hierarchy with composition where appropriate.",
+        6: "Introduce a strategy pattern to eliminate type-checking conditionals.",
+        7: "Eliminate all code duplication across a module (DRY principle).",
+        8: "Refactor a module to follow SOLID principles. Document each change.",
+        9: "Simplify a state machine implementation to use a table-driven approach.",
+        10: "Refactor a module to be fully type-safe with no 'Any' annotations.",
+    },
+    Topic.INTEGRATION: {
+        1: "Write a simple adapter function between two modules.",
+        2: "Add error handling at the boundary between two modules.",
+        3: "Connect module A's output format to module B's input format.",
+        4: "Build a facade that provides a unified interface to multiple modules.",
+        5: "Implement an event bus or pub-sub mechanism connecting disconnected modules.",
+        6: "Add retry logic and circuit-breaker pattern to an external service call.",
+        7: "Build a plugin system that allows extending functionality without modifying core.",
+        8: "Migrate from one data format to another across the entire codebase.",
+        9: "Implement end-to-end integration test for a multi-module feature.",
+        10: "Design and implement a microservice boundary in a monolithic codebase.",
+    },
+    Topic.DEBUGGING: {
+        1: "Read a function and list anything that could go wrong.",
+        2: "Find and fix a logic error in a simple function.",
+        3: "Identify a resource leak (file handle, connection) and fix it.",
+        4: "Find a race condition in concurrent code and add proper synchronisation.",
+        5: "Debug a failing test: identify why it fails and fix the production code.",
+        6: "Find a subtle off-by-one error in array/string processing code.",
+        7: "Identify and fix a memory leak pattern in long-running code.",
+        8: "Debug a Heisenbug that only appears under specific timing conditions.",
+        9: "Find and fix a security vulnerability (injection, XSS, etc.).",
+        10: "Reverse-engineer corrupted data to find the bug that caused it.",
+    },
+    Topic.ESTIMATION: {
+        1: "Estimate how long a simple function would take to implement.",
+        2: "Given a task description, list the steps and estimate each.",
+        3: "Predict the complexity of a module based on its interface alone.",
+        4: "Calibrate your estimates: compare predictions with actual times.",
+        5: "Build an estimation model using your historical accuracy data.",
+        6: "Estimate the impact radius of a proposed change across the codebase.",
+        7: "Predict which module is most likely to have bugs based on complexity metrics.",
+        8: "Create a confidence-weighted project timeline with risk buffers.",
+        9: "Estimate the effort to migrate from one technology to another.",
+        10: "Build a Bayesian estimator that updates as new data arrives.",
+    },
+    Topic.DOJO: {
+        1: "Compare your solution to a reference and identify improvements.",
+        2: "Refactor an intentionally bad solution to match production quality.",
+        3: "Solve the same problem in two different ways and compare trade-offs.",
+        4: "Review a peer solution: find 3 bugs and 2 improvements.",
+        5: "Given 3 solutions to the same problem, rank them and justify your ranking.",
+        6: "Write a solution that is provably better than the reference on some metric.",
+        7: "Adapt your solution style to match a given coding standard.",
+        8: "Solve a problem in minimal code — golf the solution.",
+        9: "Write a solution that handles all the edge cases the reference misses.",
+        10: "Given a deliberately adversarial specification, find the traps and produce a correct solution.",
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Curriculum
+# ---------------------------------------------------------------------------
+
+class Curriculum:
+    """Generates and manages the spiral curriculum.
+
+    Topics rotate in order. Each full rotation increases difficulty by 1.
+    The curriculum adapts to agent weaknesses.
+    """
+
+    # Topic order for each day-band
+    DAY_TOPICS: dict[int, list[Topic]] = {
+        1: [Topic.RECONNAISSANCE],
+        2: [Topic.FIRST_WINS],
+        3: [Topic.TESTING, Topic.DOCUMENTATION, Topic.REFACTORING, Topic.DEBUGGING],
+        4: [Topic.INTEGRATION, Topic.ESTIMATION, Topic.TESTING, Topic.REFACTORING],
+        5: [Topic.DOJO, Topic.TESTING, Topic.DEBUGGING, Topic.INTEGRATION],
+    }
+
+    def __init__(self) -> None:
+        self.rotation: int = 0  # 0-indexed
+        self.day: int = 1
+        self._topic_index: int = 0
+        self._challenges_generated: int = 0
+
+    def current_day_topics(self) -> list[Topic]:
+        """Get topics available for the current day."""
+        topics = self.DAY_TOPICS.get(self.day, [
+            Topic.TESTING, Topic.DOCUMENTATION, Topic.REFACTORING,
+            Topic.INTEGRATION, Topic.DEBUGGING, Topic.ESTIMATION, Topic.DOJO,
+        ])
+        return topics
+
+    def next_topic(self) -> Topic:
+        """Get the next topic in rotation, cycling within the current day."""
+        topics = self.current_day_topics()
+        topic = topics[self._topic_index % len(topics)]
+        self._topic_index += 1
+        return topic
+
+    def difficulty_for_rotation(self, base_difficulty: int = 1) -> int:
+        """Calculate difficulty based on rotation number.
+
+        Spiral: rotation 0 = base, rotation 1 = base+1, etc.
+        Caps at 10.
+        """
+        return min(base_difficulty + self.rotation, 10)
+
+    def advance_rotation(self) -> None:
+        """Move to the next spiral rotation."""
+        self.rotation += 1
+        self._topic_index = 0
+
+    def advance_day(self) -> None:
+        """Move to the next training day."""
+        self.day += 1
+
+    def generate_challenge(self, topic: Optional[Topic] = None) -> Challenge:
+        """Generate a single challenge for the given (or next) topic."""
+        if topic is None:
+            topic = self.next_topic()
+
+        difficulty = self.difficulty_for_rotation()
+        self._challenges_generated += 1
+
+        descriptions = _TOPIC_DESCRIPTIONS.get(topic, {})
+        # Pick description closest to our difficulty
+        desc = descriptions.get(difficulty)
+        if desc is None:
+            # Find closest available
+            closest = min(descriptions.keys(), key=lambda d: abs(d - difficulty))
+            desc = descriptions[closest]
+
+        criteria = self._acceptance_criteria(topic, difficulty)
+
+        return Challenge(
+            topic=topic,
+            difficulty=difficulty,
+            rotation=self.rotation + 1,
+            description=desc,
+            acceptance_criteria=criteria,
+            time_limit_minutes=max(5, difficulty * 3),
+            is_blind=difficulty >= 7,
+            metadata={"day": self.day, "generated_count": self._challenges_generated},
+        )
+
+    def generate_adaptive(
+        self,
+        skills: SkillsTracker,
+        count: int = 5,
+    ) -> list[Challenge]:
+        """Generate challenges adapted to agent weaknesses.
+
+        If a topic has 3+ consecutive failures, weight it more heavily.
+        If a topic has proficiency > 0.8, skip it.
+        """
+        weaknesses = skills.assess_weaknesses()
+        weak_topics = {g.topic for g in weaknesses}
+
+        challenges: list[Challenge] = []
+        attempts = 0
+        max_attempts = count * 3  # safety limit
+
+        while len(challenges) < count and attempts < max_attempts:
+            attempts += 1
+            topic = self.next_topic()
+
+            # Skip mastered topics unless we've exhausted weak ones
+            prof = skills.proficiency(topic)
+            if prof > 0.8 and weak_topics and topic not in weak_topics:
+                continue
+
+            difficulty = self.difficulty_for_rotation()
+            # Boost difficulty for strong topics, lower for weak ones
+            if prof > 0.7:
+                difficulty = min(difficulty + 1, 10)
+            elif prof < 0.3:
+                difficulty = max(difficulty - 1, 1)
+
+            self._challenges_generated += 1
+
+            descriptions = _TOPIC_DESCRIPTIONS.get(topic, {})
+            desc = descriptions.get(difficulty)
+            if desc is None:
+                closest = min(descriptions.keys(), key=lambda d: abs(d - difficulty)) if descriptions else 1
+                desc = descriptions.get(closest, f"Practice {topic.value} at difficulty {difficulty}.")
+
+            criteria = self._acceptance_criteria(topic, difficulty)
+
+            challenges.append(
+                Challenge(
+                    topic=topic,
+                    difficulty=difficulty,
+                    rotation=self.rotation + 1,
+                    description=desc,
+                    acceptance_criteria=criteria,
+                    time_limit_minutes=max(5, difficulty * 3),
+                    is_blind=difficulty >= 7,
+                    metadata={"day": self.day, "generated_count": self._challenges_generated},
+                )
+            )
+
+        return challenges
+
+    def generate_curriculum(
+        self,
+        skills: Optional[SkillsTracker] = None,
+        count: int = 20,
+    ) -> list[Challenge]:
+        """Generate a full curriculum for the current training cycle."""
+        if skills is not None:
+            return self.generate_adaptive(skills, count)
+        return [self.generate_challenge() for _ in range(count)]
+
+    @staticmethod
+    def _acceptance_criteria(topic: Topic, difficulty: int) -> list[str]:
+        """Generate acceptance criteria based on topic and difficulty."""
+        base = {
+            Topic.RECONNAISSANCE: [
+                "Output must list all relevant files and their purposes.",
+                "Dependencies between modules must be clearly identified.",
+            ],
+            Topic.FIRST_WINS: [
+                "Change must not break existing tests.",
+                "Code must pass linting checks.",
+            ],
+            Topic.TESTING: [
+                "All tests must pass.",
+                "Coverage must increase or remain stable.",
+                "Edge cases must be explicitly tested.",
+            ],
+            Topic.DOCUMENTATION: [
+                "Documentation must accurately describe the current code.",
+                "Examples must be runnable.",
+            ],
+            Topic.REFACTORING: [
+                "All existing tests must still pass.",
+                "Code must be shorter or clearer than before.",
+                "Behavior must not change.",
+            ],
+            Topic.INTEGRATION: [
+                "Connected modules must exchange data correctly.",
+                "Error cases must be handled gracefully.",
+            ],
+            Topic.DEBUGGING: [
+                "The root cause must be identified.",
+                "A test proving the bug must be added.",
+                "The fix must not introduce regressions.",
+            ],
+            Topic.ESTIMATION: [
+                "Estimate must be within 50% of actual time.",
+                "Reasoning must be documented.",
+            ],
+            Topic.DOJO: [
+                "Solution must be functionally correct.",
+                "Solution must handle edge cases the reference misses.",
+            ],
+        }
+        criteria = list(base.get(topic, ["Solution must be correct."]))
+        if difficulty >= 5:
+            criteria.append("Solution must handle error cases gracefully.")
+        if difficulty >= 8:
+            criteria.append("Solution must be well-documented with clear reasoning.")
+        return criteria
