@@ -1122,3 +1122,570 @@ class TestDifficultyLevel:
         for level in DifficultyLevel:
             assert level.value >= 1
             assert level.value <= 10
+
+# ===================================================================
+# Additional DifficultyLevel Tests
+# ===================================================================
+
+class TestDifficultyLevelAdvanced:
+    def test_level_count(self):
+        assert len(DifficultyLevel) == 10
+
+    def test_level_names_unique(self):
+        names = [l.name for l in DifficultyLevel]
+        assert len(names) == len(set(names))
+
+    def test_level_values_sequential(self):
+        values = [l.value for l in DifficultyLevel]
+        assert values == list(range(1, 11))
+
+
+# ===================================================================
+# Additional SkillsTracker Edge Case Tests
+# ===================================================================
+
+class TestSkillsTrackerFailureStreaks:
+    def test_failure_streak_resets_on_good_score(self):
+        st = SkillsTracker()
+        for i in range(3):
+            st.record(Topic.TESTING, 0.2, f"ch-fs-{i}")
+        assert st._failure_streaks[Topic.TESTING] >= 3
+        st.record(Topic.TESTING, 0.8, "ch-fs-good")
+        assert st._failure_streaks[Topic.TESTING] == 0
+
+    def test_boundary_score_0_39_is_failure(self):
+        st = SkillsTracker()
+        st.record(Topic.TESTING, 0.39, "ch-bs-1")
+        assert st._failure_streaks[Topic.TESTING] == 1
+
+    def test_boundary_score_0_4_passes(self):
+        st = SkillsTracker()
+        st.record(Topic.TESTING, 0.4, "ch-bs-2")
+        assert st._failure_streaks[Topic.TESTING] == 0
+
+    def test_multiple_topics_independent_streaks(self):
+        st = SkillsTracker()
+        for i in range(3):
+            st.record(Topic.TESTING, 0.1, f"ch-is-t{i}")
+        for i in range(2):
+            st.record(Topic.DEBUGGING, 0.1, f"ch-is-d{i}")
+        assert st._failure_streaks[Topic.TESTING] >= 3
+        assert st._failure_streaks[Topic.DEBUGGING] == 2
+
+
+class TestSkillsTrackerProficiencyAdvanced:
+    def test_declining_scores(self):
+        st = SkillsTracker()
+        st.record(Topic.TESTING, 0.9, "ch-pa-1")
+        st.record(Topic.TESTING, 0.1, "ch-pa-2")
+        prof = st.proficiency(Topic.TESTING)
+        assert 0.6 < prof < 0.7
+
+    def test_stable_scores(self):
+        st = SkillsTracker()
+        for i in range(10):
+            st.record(Topic.TESTING, 0.5, f"ch-pa-s{i}")
+        prof = st.proficiency(Topic.TESTING)
+        assert 0.4 < prof < 0.6
+
+    def test_perfect_scores(self):
+        st = SkillsTracker()
+        for i in range(5):
+            st.record(Topic.TESTING, 1.0, f"ch-pa-p{i}")
+        prof = st.proficiency(Topic.TESTING)
+        assert prof > 0.9
+
+    def test_zero_scores(self):
+        st = SkillsTracker()
+        for i in range(5):
+            st.record(Topic.TESTING, 0.0, f"ch-pa-z{i}")
+        prof = st.proficiency(Topic.TESTING)
+        assert prof < 0.1
+
+    def test_alternating_scores(self):
+        st = SkillsTracker()
+        for i in range(10):
+            score = 1.0 if i % 2 == 0 else 0.0
+            st.record(Topic.TESTING, score, f"ch-pa-a{i}")
+        prof = st.proficiency(Topic.TESTING)
+        assert 0.2 < prof < 0.8
+
+
+class TestSkillsTrackerExportAdvanced:
+    def test_to_csv_multiple_records(self):
+        st = SkillsTracker()
+        for i in range(5):
+            st.record(Topic.TESTING, 0.5 + i * 0.1, f"ch-ea-{i}")
+        csv_text = st.to_csv()
+        lines = csv_text.strip().split("\n")
+        assert len(lines) == 6
+
+    def test_to_json_valid_structure(self):
+        st = SkillsTracker()
+        st.record(Topic.DEBUGGING, 0.5, "ch-ea-1")
+        data = json.loads(st.to_json())
+        assert "proficiencies" in data
+        assert "overall" in data
+        assert "weaknesses" in data
+
+    def test_from_dict_preserves_proficiency(self):
+        st = SkillsTracker()
+        for i in range(5):
+            st.record(Topic.REFACTORING, 0.5 + i * 0.1, f"ch-ea-r{i}")
+        original_prof = st.proficiency(Topic.REFACTORING)
+        data = st.to_dict()
+        st2 = SkillsTracker.from_dict(data)
+        assert st2.proficiency(Topic.REFACTORING) == pytest.approx(original_prof, abs=0.001)
+
+    def test_to_dict_has_correct_keys(self):
+        st = SkillsTracker()
+        d = st.to_dict()
+        assert set(d.keys()) == {"records", "proficiencies", "overall", "weaknesses"}
+
+
+class TestTopicEnum:
+    def test_all_topics_unique(self):
+        values = [t.value for t in Topic]
+        assert len(values) == len(set(values))
+
+    def test_topic_count(self):
+        assert len(Topic) == 9
+
+    def test_topic_values_are_strings(self):
+        for t in Topic:
+            assert isinstance(t.value, str)
+
+
+# ===================================================================
+# Additional Style Analysis Tests
+# ===================================================================
+
+class TestStyleAnalysisAdvanced:
+    def test_async_detected(self):
+        solution = "async def fetch():\n    await result"
+        metrics = analyse_style(solution)
+        assert "async" in metrics.approaches_used
+
+    def test_lambda_detected(self):
+        solution = "f = lambda x: x * 2"
+        metrics = analyse_style(solution)
+        assert "lambda" in metrics.approaches_used
+
+    def test_comprehension_detected(self):
+        solution = "result = [x for x in range(10)]"
+        metrics = analyse_style(solution)
+        assert "comprehension" in metrics.approaches_used
+
+    def test_exception_handling_detected(self):
+        solution = "try:\n    pass\nexcept:\n    pass"
+        metrics = analyse_style(solution)
+        assert "exception_handling" in metrics.approaches_used
+
+    def test_context_manager_detected(self):
+        solution = "with open('file') as f:\n    pass"
+        metrics = analyse_style(solution)
+        assert "context_manager" in metrics.approaches_used
+
+    def test_unique_words_counted(self):
+        solution = "a b c d e f g"
+        metrics = analyse_style(solution)
+        assert metrics.unique_words == 7
+
+    def test_avg_line_length(self):
+        solution = "abcd\nefgh\nijkl"
+        metrics = analyse_style(solution)
+        assert metrics.avg_line_length == pytest.approx(4.0, abs=0.1)
+
+    def test_distance_identical(self):
+        m = StyleMetrics(line_count=10, avg_line_length=30, function_count=2)
+        assert m.distance(m) == 0.0
+
+    def test_distance_symmetric(self):
+        m1 = StyleMetrics(line_count=10, avg_line_length=30)
+        m2 = StyleMetrics(line_count=100, avg_line_length=80)
+        assert m1.distance(m2) == pytest.approx(m2.distance(m1), abs=0.001)
+
+    def test_to_dict_completeness(self):
+        m = StyleMetrics(line_count=10, avg_line_length=30, function_count=2,
+                         comment_ratio=0.1, max_nesting_depth=3, unique_words=50,
+                         approaches_used=["regex", "OOP"])
+        d = m.to_dict()
+        assert d["line_count"] == 10
+        assert d["function_count"] == 2
+        assert d["comment_ratio"] == 0.1
+
+
+# ===================================================================
+# Additional Challenge Tests
+# ===================================================================
+
+class TestChallengeAdvanced:
+    def test_custom_time_limit(self):
+        ch = Challenge(time_limit_minutes=30.0)
+        assert ch.time_limit_minutes == 30.0
+
+    def test_hints_default_empty(self):
+        ch = Challenge()
+        assert ch.hints == []
+
+    def test_custom_hints(self):
+        ch = Challenge(hints=["hint1", "hint2"])
+        assert len(ch.hints) == 2
+
+    def test_metadata_default_empty(self):
+        ch = Challenge()
+        assert ch.metadata == {}
+
+    def test_custom_metadata(self):
+        ch = Challenge(metadata={"key": "value"})
+        assert ch.metadata["key"] == "value"
+
+    def test_difficulty_boundary_min(self):
+        ch = Challenge(difficulty=0)
+        assert ch.difficulty == 1
+
+    def test_difficulty_boundary_max(self):
+        ch = Challenge(difficulty=100)
+        assert ch.difficulty == 10
+
+    def test_all_difficulty_labels(self):
+        for i in range(1, 11):
+            ch = Challenge(difficulty=i)
+            assert ch.difficulty_label in [dl.name for dl in DifficultyLevel]
+
+
+# ===================================================================
+# Additional Dojo Tests
+# ===================================================================
+
+class TestDojoAdvanced:
+    def test_multiple_rounds_accumulate(self):
+        dojo = Dojo("test-agent")
+        for i in range(3):
+            ch = Challenge(topic=Topic.DOJO, id=f"ch-da-{i}")
+            dojo.run_round(ch, "def solve(): return True")
+        assert len(dojo.results) == 9
+
+    def test_record_summary_after_rounds(self):
+        dojo = Dojo("test-agent")
+        ch = Challenge(topic=Topic.DOJO)
+        dojo.run_round(ch, "def solve():\n    return True")
+        summary = dojo.record_summary()
+        total = summary["win"] + summary["loss"] + summary["draw"]
+        assert total == 3
+
+    def test_tournament_missing_solution(self):
+        dojo = Dojo("test-agent")
+        challenges = [Challenge(topic=Topic.DOJO, id=f"ch-tm-{i}") for i in range(3)]
+        solutions = {"ch-tm-0": "def solve(): return True"}
+        results = dojo.run_tournament(challenges, solutions)
+        assert len(results) == 3
+
+    def test_tournament_empty_solutions(self):
+        dojo = Dojo("test-agent")
+        challenges = [Challenge(topic=Topic.DOJO, id=f"ch-te-{i}") for i in range(3)]
+        results = dojo.run_tournament(challenges, {})
+        assert len(results) == 0
+
+    def test_score_solution_empty(self):
+        score = Dojo._score_solution("", Challenge())
+        assert score == 0.0
+
+    def test_score_solution_with_function(self):
+        sol = "def solve(): return True"
+        score = Dojo._score_solution(sol, Challenge(difficulty=5))
+        assert score > 0.5
+
+
+# ===================================================================
+# Additional Twin Solution Tests
+# ===================================================================
+
+class TestTwinSolutionAdvanced:
+    def test_twin_variant_name_format(self):
+        ch = Challenge()
+        twin = generate_twin_solution(ch, "code", TwinDifficulty.EASY)
+        assert twin.name.startswith("Twin-")
+        assert twin.twin_type == TwinDifficulty.EASY
+
+    def test_twin_metadata_has_challenge_id(self):
+        ch = Challenge(id="test123")
+        twin = generate_twin_solution(ch, "code", TwinDifficulty.HARD)
+        assert twin.metadata["challenge_id"] == "test123"
+
+    def test_hard_twin_has_extra_comments(self):
+        ch = Challenge()
+        twin = generate_twin_solution(ch, "def solve(): pass", TwinDifficulty.HARD)
+        assert "Additional edge case" in twin.solution
+
+    def test_adversarial_swaps_variables(self):
+        ch = Challenge()
+        solution = "result = data + output"
+        twin = generate_twin_solution(ch, solution, TwinDifficulty.ADVERSARIAL)
+        assert "_alt" in twin.solution
+
+
+# ===================================================================
+# Additional Shadow Challenge Tests
+# ===================================================================
+
+class TestShadowChallengeAdvanced:
+    def test_easy_clamps_min_difficulty(self):
+        ch = Challenge(difficulty=2)
+        shadow = generate_shadow_challenge(ch, TwinDifficulty.EASY)
+        assert shadow.difficulty >= 1
+
+    def test_hard_clamps_max_difficulty(self):
+        ch = Challenge(difficulty=9)
+        shadow = generate_shadow_challenge(ch, TwinDifficulty.HARD)
+        assert shadow.difficulty <= 10
+
+    def test_shadow_preserves_acceptance_criteria(self):
+        ch = Challenge(acceptance_criteria=["c1", "c2"])
+        shadow = generate_shadow_challenge(ch, TwinDifficulty.EASY)
+        assert shadow.acceptance_criteria == ["c1", "c2"]
+
+    def test_shadow_preserves_time_limit(self):
+        ch = Challenge(time_limit_minutes=15.0)
+        shadow = generate_shadow_challenge(ch, TwinDifficulty.HARD)
+        assert shadow.time_limit_minutes == 15.0
+
+    def test_shadow_not_blind(self):
+        ch = Challenge(is_blind=True)
+        shadow = generate_shadow_challenge(ch, TwinDifficulty.ADVERSARIAL)
+        assert shadow.is_blind is False
+
+    def test_shadow_different_id(self):
+        ch = Challenge(id="orig123")
+        shadow = generate_shadow_challenge(ch, TwinDifficulty.EASY)
+        assert shadow.id != "orig123"
+
+
+# ===================================================================
+# Additional TranscriptEntry Tests
+# ===================================================================
+
+class TestTranscriptEntryAdvanced:
+    def test_narrative_failed(self):
+        tt = TrainingTranscript()
+        ch = Challenge(id="ch-nea-1", topic=Topic.TESTING, difficulty=3)
+        grade = Grade(score=0.2, passed=False, feedback="Bad")
+        entry = tt.add_entry(ch, grade)
+        assert "attempted" in entry.narrative()
+
+    def test_transcript_empty_str(self):
+        tt = TrainingTranscript()
+        text = str(tt)
+        assert "Training Transcript" in text
+        assert "0/0" in text
+
+    def test_transcript_multiple_entries_summary(self):
+        tt = TrainingTranscript()
+        ch = Challenge(id="ch-nea-2", topic=Topic.TESTING, difficulty=3)
+        for i in range(5):
+            grade = Grade(score=0.5 + i * 0.1, passed=(i > 1), feedback=f"ok {i}")
+            tt.add_entry(ch, grade)
+        d = tt.to_dict()
+        assert d["summary"]["total"] == 5
+        assert d["summary"]["passed"] == 3
+
+    def test_transcript_to_dict_average_score(self):
+        tt = TrainingTranscript()
+        ch = Challenge(id="ch-nea-3", topic=Topic.TESTING, difficulty=3)
+        tt.add_entry(ch, Grade(score=0.5, passed=True))
+        tt.add_entry(ch, Grade(score=1.0, passed=True))
+        d = tt.to_dict()
+        assert d["summary"]["average_score"] == pytest.approx(0.75, abs=0.01)
+
+
+# ===================================================================
+# Additional Curriculum Tests
+# ===================================================================
+
+class TestCurriculumAdvanced:
+    def test_unknown_day_topics(self):
+        cur = Curriculum()
+        cur.day = 100
+        topics = cur.current_day_topics()
+        assert len(topics) > 0
+
+    def test_advance_rotation_resets_index(self):
+        cur = Curriculum()
+        cur.day = 3
+        for _ in range(10):
+            cur.next_topic()
+        assert cur._topic_index > 0
+        cur.advance_rotation()
+        assert cur._topic_index == 0
+
+    def test_generate_challenge_increments_counter(self):
+        cur = Curriculum()
+        before = cur._challenges_generated
+        cur.generate_challenge()
+        assert cur._challenges_generated == before + 1
+
+    def test_generate_challenge_metadata(self):
+        cur = Curriculum()
+        ch = cur.generate_challenge()
+        assert "day" in ch.metadata
+        assert "generated_count" in ch.metadata
+
+    def test_generate_challenge_rotation(self):
+        cur = Curriculum()
+        cur.rotation = 2
+        ch = cur.generate_challenge()
+        assert ch.rotation == 3
+
+    def test_acceptance_criteria_high_difficulty(self):
+        criteria = Curriculum._acceptance_criteria(Topic.TESTING, 9)
+        assert len(criteria) > 2
+
+    def test_acceptance_criteria_low_difficulty(self):
+        criteria = Curriculum._acceptance_criteria(Topic.TESTING, 2)
+        assert len(criteria) == 3
+
+    def test_all_topic_criteria_valid(self):
+        for topic in Topic:
+            criteria = Curriculum._acceptance_criteria(topic, 5)
+            assert len(criteria) > 0
+            for c in criteria:
+                assert isinstance(c, str)
+
+
+# ===================================================================
+# Additional Grade Tests
+# ===================================================================
+
+class TestGradeAdvanced:
+    def test_criteria_met_list(self):
+        ch = Challenge(acceptance_criteria=["function must be defined"])
+        solution = "def my_function(): return 1"
+        g = grade_solution(ch, solution)
+        assert len(g.criteria_met) >= 1
+
+    def test_default_grade_values(self):
+        g = Grade(score=0.5, passed=True)
+        assert g.feedback == ""
+        assert g.criteria_met == []
+        assert g.criteria_missed == []
+        assert g.time_taken == 0.0
+
+    def test_grade_with_all_fields(self):
+        g = Grade(
+            score=0.8, passed=True, feedback="Great!",
+            criteria_met=["c1"], criteria_missed=["c2"],
+            time_taken=5.5,
+        )
+        assert g.feedback == "Great!"
+        assert len(g.criteria_met) == 1
+        assert len(g.criteria_missed) == 1
+        assert g.time_taken == 5.5
+
+    def test_empty_solution_misses_all_criteria(self):
+        ch = Challenge(acceptance_criteria=["c1", "c2", "c3"])
+        g = grade_solution(ch, "")
+        assert len(g.criteria_missed) == 3
+        assert len(g.criteria_met) == 0
+
+    def test_solution_with_class_keyword(self):
+        ch = Challenge()
+        g = grade_solution(ch, "class Foo:\n    pass")
+        assert g.score > 0.0
+
+
+# ===================================================================
+# Additional Rankings Tests
+# ===================================================================
+
+class TestRankingsAdvanced:
+    def test_empty_leaderboard(self):
+        rankings = Rankings()
+        assert rankings.leaderboard() == []
+
+    def test_rank_with_multiple_agents(self):
+        rankings = Rankings()
+        for name, score in [("a", 0.3), ("b", 0.7), ("c", 0.5)]:
+            bc = Bootcamp(name)
+            bc.skills.record(Topic.TESTING, score, "ch-ra-1")
+            rankings.register(bc)
+        assert rankings.rank("a") == 3
+        assert rankings.rank("b") == 1
+        assert rankings.rank("c") == 2
+
+    def test_leaderboard_sorted_descending(self):
+        rankings = Rankings()
+        for name, score in [("x", 0.1), ("y", 0.9), ("z", 0.5)]:
+            bc = Bootcamp(name)
+            bc.skills.record(Topic.TESTING, score, "ch-rb-1")
+            rankings.register(bc)
+        board = rankings.leaderboard()
+        profs = [e["overall_proficiency"] for e in board]
+        assert profs == sorted(profs, reverse=True)
+
+    def test_rank_missing_agent(self):
+        rankings = Rankings()
+        bc = Bootcamp("existing")
+        bc.skills.record(Topic.TESTING, 0.5, "ch-rc-1")
+        rankings.register(bc)
+        assert rankings.rank("ghost") == 2
+
+    def test_leaderboard_has_all_fields(self):
+        rankings = Rankings()
+        bc = Bootcamp("test")
+        bc.skills.record(Topic.TESTING, 0.5, "ch-rd-1")
+        rankings.register(bc)
+        board = rankings.leaderboard()
+        entry = board[0]
+        assert "name" in entry
+        assert "overall_proficiency" in entry
+        assert "challenges_done" in entry
+        assert "dojo_win_rate" in entry
+        assert "average_score" in entry
+
+
+# ===================================================================
+# Additional Bootcamp Lifecycle Tests
+# ===================================================================
+
+class TestBootcampLifecycleAdvanced:
+    def test_restart_training(self):
+        bc = Bootcamp("test-la-1")
+        bc.start_training()
+        bc.end_training()
+        bc.start_training()
+        assert bc.is_active
+        assert bc.current_challenge is not None
+
+    def test_submit_then_next(self):
+        bc = Bootcamp("test-la-2")
+        ch1 = bc.next_challenge()
+        bc.submit_solution(ch1.id, "solution")
+        assert bc.current_challenge is None
+        ch2 = bc.next_challenge()
+        assert isinstance(ch2, Challenge)
+        assert ch2.id != ch1.id
+
+    def test_progress_report_after_training(self):
+        bc = Bootcamp("test-la-3")
+        ch = bc.next_challenge()
+        bc.submit_solution(ch.id, "good solution with tests")
+        report = bc.progress_report()
+        assert report["challenges_done"] == 1
+        assert report["overall_proficiency"] > 0.0
+
+    def test_export_report_after_submissions(self):
+        bc = Bootcamp("test-la-4")
+        for i in range(3):
+            ch = bc.next_challenge()
+            bc.submit_solution(ch.id, f"solution {i}")
+        import tempfile, os
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+        try:
+            bc.export_report(path)
+            with open(path) as f:
+                data = json.load(f)
+            assert data["session"]["challenges_done"] == 3
+            assert len(data["transcript"]["entries"]) == 3
+        finally:
+            os.unlink(path)
