@@ -16,20 +16,33 @@ from typing import Any
 
 
 class Topic(Enum):
-    RECONNAISSANCE = "reconnaissance"
-    FIRST_WINS = "first_wins"
-    TESTING = "testing"
-    DOCUMENTATION = "documentation"
-    REFACTORING = "refactoring"
-    INTEGRATION = "integration"
-    DEBUGGING = "debugging"
-    ESTIMATION = "estimation"
-    DOJO = "dojo"
+    """Training topic domains.
+
+    Each topic maps to a distinct skill area the agent must master.
+    Topics are ordered roughly by when they appear in the spiral
+    (Day 1–5), though all topics cycle in later phases.
+    """
+
+    RECONNAISSANCE = "reconnaissance"     # Day 1: project mapping, dependency analysis, risk assessment
+    FIRST_WINS = "first_wins"              # Day 2: quick fixes, docstrings, basic improvements
+    TESTING = "testing"                    # Day 3+: unit tests, edge cases, mutation-resistant tests
+    DOCUMENTATION = "documentation"        # Day 3+: docstrings, tutorials, ADRs, architecture docs
+    REFACTORING = "refactoring"            # Day 3+: DRY, SOLID, design patterns, type safety
+    INTEGRATION = "integration"            # Day 4+: adapters, facades, event buses, plugin systems
+    DEBUGGING = "debugging"                # Day 3+: logic errors, leaks, race conditions, Heisenbugs
+    ESTIMATION = "estimation"              # Day 4+: duration prediction, complexity analysis, calibration
+    DOJO = "dojo"                          # Day 5+: self-sparring, peer review, adversarial specs
 
 
 @dataclass
 class SkillRecord:
-    """A single scored attempt at a topic."""
+    """A single scored attempt at a topic.
+
+    Each record captures one challenge attempt: the topic, the score
+    (0.0–1.0), the challenge ID for traceability, a UTC timestamp,
+    and optional free-text details (typically grader feedback).
+    Records feed into the proficiency EMA and weakness detection.
+    """
 
     topic: Topic
     score: float  # 0.0 - 1.0
@@ -40,7 +53,13 @@ class SkillRecord:
 
 @dataclass
 class SkillGap:
-    """Identified weakness in an agent's skills."""
+    """Identified weakness in an agent's skills.
+
+    Gaps are surfaced by `SkillsTracker.assess_weaknesses()` and used
+    by the Curriculum to generate targeted challenges. A gap is flagged
+    when proficiency drops below 0.5 or when 3+ consecutive failures
+    occur on the same topic.
+    """
 
     topic: Topic
     current_level: float
@@ -50,7 +69,14 @@ class SkillGap:
 
 
 class SkillsTracker:
-    """Track and analyse an agent's skill proficiency over time."""
+    """Track and analyse an agent's skill proficiency over time.
+
+    Maintains a list of `SkillRecord` instances and computes per-topic
+    proficiency using an Exponential Moving Average (EMA, α=0.3).
+    Detects weaknesses (low proficiency or failure streaks) and
+    plateaus (stagnant scores). Supports export to JSON, CSV, and
+    Python dicts for persistence.
+    """
 
     def __init__(self) -> None:
         self.records: list[SkillRecord] = []

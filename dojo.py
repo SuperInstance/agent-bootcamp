@@ -29,7 +29,12 @@ class TwinDifficulty(Enum):
 
 @dataclass
 class TwinVariant:
-    """A variant of a solution for sparring."""
+    """A variant of a solution for sparring.
+
+    Twin variants are generated from the agent's own solution using
+    deterministic transformations. Each variant has a difficulty
+    type (EASY, HARD, ADVERSARIAL) and a unique name.
+    """
 
     name: str
     twin_type: TwinDifficulty

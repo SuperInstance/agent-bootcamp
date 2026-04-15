@@ -1,9 +1,18 @@
+# Agent Bootcamp — Spiral Training for Git-Agents
+# Part of the Cocapn Fleet (Git-Agent Standard v2.0)
+#
+# A training system that forces git-agents to build real skills
+# (application code) rather than relying on system prompts.
+# Challenges are generated from actual project weak spots,
+# difficulty spirals upward, and agents spar against shadow
+# variants of themselves in the Dojo.
+
 [project]
 name = "agent-bootcamp"
 version = "0.1.0"
 description = "Spiral training system that makes git-agents genuinely skilled"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = []  # stdlib only — no external dependencies
 
 [project.scripts]
 agent-bootcamp = "cli:main"
