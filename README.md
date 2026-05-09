@@ -1,5 +1,15 @@
 # Agent Bootcamp
 
+
+## Meta
+
+**Domain:** ai-agents
+**Depends on:** —
+**Depended by:** —
+**Implements:** Spiral bootcamp for git-agents — challenges adapt to weaknesses, dojo pits agent...
+**Related:** —
+
+
 **Spiral training for git-agents. Force agents to build real skills, not just describe them.**
 
 A system prompt is a wish. "You are good at estimating task duration" — prove it. Build a `task_estimator.py`, calibrate it against 200 iterations of real data, and let the next agent inherit it.
